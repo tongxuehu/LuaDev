@@ -1,7 +1,7 @@
 #-----------------------------------------------------------------------------------
 # LuaDev Sublime Text Plugin
 # Author: tongxuehu@gmail.com
-# Version: 1.0
+# Version: 1.1
 # Description: Lua autocomplete improvements
 #-----------------------------------------------------------------------------------
 
@@ -160,8 +160,13 @@ class LuaDevCollector(KSigns, sublime_plugin.EventListener):
 		current_file = view.file_name()
 		if not is_lua_file(current_file):
 			return
+
+		window = view.window()
+		if window == None:
+			return
+
 		path_list = [current_file]
-		path_list += view.window().folders()
+		path_list += window.folders()
 
 		if self._collector_thread != None:
 			self._collector_thread.stop()
