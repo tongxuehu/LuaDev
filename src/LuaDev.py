@@ -69,22 +69,22 @@ class KSigns:
 			for method in method_list:
 				if word in method.class_name():
 					if method.class_name() not in autocomplete_list:
-						autocomplete_list.append((method.class_name(), method.class_name()))
-					method_str_to_append = method.name() + '(' + method.signature()+ ')'
+						autocomplete_list.append((method.class_name() + '\t' + method.filename(), method.class_name()))
+					method_str_hint = method.name() + '(' + method.signature()+ ')'
 					if method.class_name() != "":
-						method_str_to_append = method.class_name() + "." + method_str_to_append;
-					autocomplete_list.append((method_str_to_append, method_str_to_append))
+						method_str_hint = method.class_name() + "." + method_str_hint;
+					method_str_to_append = method_str_hint + '\t' + method.filename()
+					autocomplete_list.append((method_str_to_append, method_str_hint))
 				if word in method.name():
 					method_str_to_append = method.name() + '(' + method.signature()+ ')'
 					if method.class_name() != "":
-						method_str_to_append = method_str_to_append + " - " + method.class_name();
+						method_str_to_append = method_str_to_append + " - " + method.class_name() + '\t' + method.filename()
 					method_str_hint = method.name() + '(' + method.hint() + ')'
 					autocomplete_list.append((method_str_to_append, method_str_hint))
 		autocomplete_list = list(set(autocomplete_list))
 		autocomplete_list.sort()
 		return autocomplete_list
-
-
+	
 
 class LuaDevCollectorThread(threading.Thread):
 	def __init__(self, collector, path_list, timeout_seconds): 
