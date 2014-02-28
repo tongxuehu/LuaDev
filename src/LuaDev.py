@@ -1,7 +1,7 @@
 #-----------------------------------------------------------------------------------
 # LuaDev Sublime Text Plugin
 # Author: tongxuehu@gmail.com
-# Version: 1.1
+# Version: 1.0
 # Description: Lua autocomplete improvements
 #-----------------------------------------------------------------------------------
 
@@ -10,7 +10,7 @@ import sublime_plugin
 import os
 import re
 import threading
-
+import subprocess
 
 def is_lua_file(filename):
 	return filename[-4:] == ".lua"
@@ -156,6 +156,11 @@ class LuaDevCollector(KSigns, sublime_plugin.EventListener):
 	_collector_thread = None
 	_wait_thread = None
 
+	_local_token = []
+
+	TIMEOUT_MS = 200
+	_pending = 0
+
 	def reload_path(self, view):
 		current_file = view.file_name()
 		if not is_lua_file(current_file):
@@ -179,11 +184,47 @@ class LuaDevCollector(KSigns, sublime_plugin.EventListener):
 	def on_post_save(self, view):
 		self.reload_path(view)
 
+		current_file = view.file_name()
+		if not is_lua_file(current_file):
+			return
+
+		self._pending = self._pending + 1
+		sublime.set_timeout(lambda: self.parse(view, current_file), self.TIMEOUT_MS)
+
 	def on_query_completions(self, view, prefix, locations):
+		completions = []
+		for keyword in self._local_token:
+			if prefix in keyword:
+				completions.append((keyword + "\t" + "- local", keyword))
+
 		current_file = view.file_name()
 		if is_lua_file(current_file):
-			return self.get_autocomplete_list(prefix)
-		else:
-			completions = []
-			completions.sort()
-			return (completions,sublime.INHIBIT_EXPLICIT_COMPLETIONS)
+			completions += self.get_autocomplete_list(prefix)
+		return (completions, sublime.OP_EQUAL)
+
+	def parse(self, view, file):
+		text = view.substr(sublime.Region(0, view.size()))
+		self._local_token = re.findall(r'\w+', text)
+		self._local_token = list(set(self._local_token))
+		self._local_token.sort()
+
+		self._pending = self._pending - 1
+		if self._pending > 0:
+			return
+	
+		packages_path = sublime.packages_path()
+		cmd = "\"" + packages_path + "\\LuaDev\\luac5.1.exe\" -p " + file
+		p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+		result = p.wait()
+		errors = p.communicate()[1]
+
+		view.erase_regions('lua_error')
+		if result == 0:
+			return
+
+		msg = bytes.decode(errors, 'gbk')
+		msg = re.findall(r"(\w+\.lua:[^$\n\r]+)", msg)[0]
+		sublime.error_message(msg)
+		pattern = re.compile(r':([0-9]+):')
+		regions = [view.full_line(view.text_point(int(match) - 1, 0)) for match in pattern.findall(msg)]
+		view.add_regions('lua_error', regions, 'invalid', 'DOT', sublime.DRAW_SQUIGGLY_UNDERLINE)
