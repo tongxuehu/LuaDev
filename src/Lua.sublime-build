@@ -1,0 +1,3 @@
+{
+	"shell_cmd": "\"$packages\\LuaDev\\lua5.1.exe\" $file",
+} 

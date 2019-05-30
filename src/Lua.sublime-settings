@@ -1,0 +1,8 @@
+{
+	"auto_complete": true,
+	"auto_mathch_enabled": true,
+	"auto_complete_triggers": 
+	[ 
+		{"selector": "source.lua", "characters": ":"},
+	]
+}

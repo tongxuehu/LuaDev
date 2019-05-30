@@ -29,30 +29,36 @@ def parse_hint(params):
 def start_with(str, prefix):
 	return
 
-class KMethod:
-	def __init__(self, name, signature, filename, hintStr, className, line_index, full_path):
-		self._name = name
-		self._lineindex = line_index
-		self._filename = filename
-		self._signature = signature
-		self._hintStr = hintStr
-		self._className = className
-		self._fullpath = full_path
-	def name(self):
-		return self._name
-	def signature(self):
-		return self._signature
-	def filename(self):
-		return self._filename
-	def hint(self):
-		return self._hintStr
-	def class_name(self):
-		return self._className
-	def line_index(self):
-		return self._lineindex
-	def full_path(self):
-		return self._fullpath
+class KSign:
+	def __init__(self, name, signature, filename, hintStr, classname, line_index, full_path):
+		self.name = name
+		self.lineindex = line_index
+		self.filename = filename
+		self.signature = signature
+		self.hintStr = hintStr
+		self.classname = classname
+		self.fullpath = full_path
 
+	def is_method(self):
+		return self.signature != None
+
+	def complete_text(self, fullname = False):
+		text = self.name
+		if fullname:
+			text = self.classname + "." + text
+
+		hint = ""
+
+		if self.signature != None:
+			text += '(' + self.signature+ ')'
+			hint = self.name + '(' + self.hintStr + ')'
+		else:
+			hint = self.name
+		
+		if self.classname != "":
+			text += " - " + self.classname + '\t' + self.filename
+
+		return text, hint
 
 class KSigns:
 	files = {}
@@ -63,51 +69,57 @@ class KSigns:
 	def clear_file(self, file):
 		self.files[file] = []
 
-	def add_mathod(self, path, name, signature, filename, class_name, line_index, full_path):
+	def add_sign(self, path, name, signature, filename, class_name, line_index, full_path):
 		if not self.files[path]:
 			self.files[path] = []
 
-		hint = parse_hint(signature)
-		methon = KMethod(name, signature, filename, hint, class_name, line_index, full_path)
-		self.files[path].append(methon)
+		hint = ""
+		if signature != None:
+			hint = parse_hint(signature)
+
+		sign = KSign(name, signature, filename, hint, class_name, line_index, full_path)
+		self.files[path].append(sign)
 
 	def get_autocomplete_list(self, word, class_name = None):
 		autocomplete_list = []
 		for file in self.files:
-			method_list = self.files[file]
-			for method in method_list:
+			sign_list = self.files[file]
+			for sign in sign_list:
 				if class_name == None:
-					method_class_name = method.class_name()
-					if method_class_name != "":
-						if method_class_name.startswith(word) and method_class_name not in autocomplete_list:
-							autocomplete_list.append((method.class_name() + '\t' + method.filename(), method.class_name()))
-					elif method.name().startswith(word):
-						method_str_to_append = method.name() + '(' + method.signature()+ ')'
-						if method.class_name() != "":
-							method_str_to_append = method_str_to_append + " - " + method.class_name() + '\t' + method.filename()
-						method_str_hint = method.name() + '(' + method.hint() + ')'
-						autocomplete_list.append((method_str_to_append, method_str_hint))
-				elif class_name == method.class_name():
-					method_str_to_append = method.name() + '(' + method.signature()+ ')'
-					if method.class_name() != "":
-						method_str_to_append = method_str_to_append + " - " + method.class_name() + '\t' + method.filename()
-					method_str_hint = method.name() + '(' + method.hint() + ')'
-					autocomplete_list.append((method_str_to_append, method_str_hint))
+					if sign.classname != "":
+						if sign.classname.startswith(word) and sign.classname not in autocomplete_list:
+							autocomplete_list.append((sign.classname + '\t' + sign.filename, sign.classname))
+					elif sign.name.startswith(word):
+						autocomplete_list.append((sign.complete_text()))
+				elif class_name == sign.classname:
+					autocomplete_list.append((sign.complete_text()))
 		autocomplete_list = list(set(autocomplete_list))
 		autocomplete_list.sort()
 		return autocomplete_list
 
-	def get_methods_by_key(self, key, class_name = None):
+	def get_all_method_list(self):
+		autocomplete_list = []
+		for file in self.files:
+			sign_list = self.files[file]
+			for sign in sign_list:
+				if sign.classname != "" and sign.is_method():
+					autocomplete_list.append((sign.complete_text(True)))
+		autocomplete_list = list(set(autocomplete_list))
+		autocomplete_list.sort()
+		return autocomplete_list
+
+
+	def get_signs_by_key(self, key, class_name = None):
 		if class_name == None:
 			class_name = ""
 
-		methods = []
+		signs = []
 		for file in self.files:
-			method_list = self.files[file]
-			for method in method_list:
-				if class_name == method.class_name() and key == method.name():
-					methods.append(method)	
-		return methods
+			sign_list = self.files[file]
+			for sign in sign_list:
+				if class_name == sign.classname and key == sign.name:
+					signs.append(sign)
+		return signs
 
 class LuaDevCollectorThread(threading.Thread):
 	def __init__(self, collector, path_list, timeout_seconds): 
@@ -121,18 +133,34 @@ class LuaDevCollectorThread(threading.Thread):
 		self.collector.clear_file(file_path)
 		file = open(file_path, "r", encoding="utf-8")
 		line_index = 0
-		for line in file:
+		pre_line = None
+
+		classes = {}
+		lines = file.readlines()
+		for line in lines:
 			line_index += 1
+			last_pre_line = pre_line
+			pre_line = line
+
 			if not "function" in line:
 				continue
 
-			matches = re.search('function\s*(\w+)[:\.](\w+)\s*\((.*)\)', line)
+			if last_pre_line:
+				matches = re.search('(--\s*local\s*$)', last_pre_line)
+				if matches != None:
+					print("skil local ", line)
+					continue
+
+			last_pre_line = line
+
+			matches = re.search('function\s(\w+)[:\.](\w+)\s*\((.*)\)', line)
 			if matches != None:
 				file_name = os.path.basename(file_path)
 				class_name = matches.group(1)
 				method_name = matches.group(2)
 				params = matches.group(3)
-				self.collector.add_mathod(file_path, method_name, params, file_name, class_name, line_index, file_path)
+				self.collector.add_sign(file_path, method_name, params, file_name, class_name, line_index, file_path)
+				classes[class_name] = True
 				continue
 
 			matches = re.search('function\s*(\w+)\s*\((.*)\)', line)
@@ -141,10 +169,25 @@ class LuaDevCollectorThread(threading.Thread):
 				class_name = ""
 				method_name = matches.group(1)
 				params = matches.group(2)
-				hint = parse_hint(params)
-				self.collector.add_mathod(file_path, method_name, params, file_name, class_name, line_index, file_path)
+				self.collector.add_sign(file_path, method_name, params, file_name, class_name, line_index, file_path)
+				classes[class_name] = True
 				continue
 
+			# matches = re.search('(\w+)\[([\w\.]+)\]\s*=\s*function\s*\((.*)\)', line)
+
+		line_index = 0
+		for line in lines:
+			line_index += 1
+
+			matches = re.search('(\w+)\.(\w+)\s*=\s*.*', line)
+			if matches != None:
+				file_name = os.path.basename(file_path)
+				table_name = matches.group(1)
+				value_name = matches.group(2)
+				print("match ... " + file_name  + "==>>>" + table_name + " --- " + value_name)
+				self.collector.add_sign(file_path, value_name, None, file_name, table_name, line_index, file_path)
+
+		file.close()
 
 	def find_file(self, dir, skip_loaded_file):
 		file_list = []
@@ -234,13 +277,14 @@ class LuaDevCollector(KSigns, sublime_plugin.EventListener):
 		if selection.a > 0:
 			prefix = view.substr(selection.a - 1)
 			if prefix == ".":
-				view.run_command("auto_complete")				
+				view.run_command("auto_complete")
 
 	def on_query_completions(self, view, prefix, locations):
-		print("on_query_completions", prefix, locations)
+		print("on_query_completions", prefix, "at", locations)
 		class_name = None
 		localtion = locations[0] - 1
-		if localtion >= 1 and view.substr(localtion) == '.':
+		op = view.substr(localtion)
+		if localtion >= 1 and (op == '.' or op == ':'):
 			word_region = view.word(localtion - 1)
 			class_name = view.substr(word_region)
 
@@ -252,13 +296,16 @@ class LuaDevCollector(KSigns, sublime_plugin.EventListener):
 
 		current_file = view.file_name()
 		if is_lua_file(current_file):
-			completions += self.get_autocomplete_list(prefix, class_name)
+			if op == ":":
+				completions += self.get_all_method_list()
+			else:
+				completions += self.get_autocomplete_list(prefix, class_name)
 		return (completions, -1)
 
 	def on_text_command(self, view, command_name, args):
 		print("on_text_command", command_name, args)
 		self._modified_delete_flag = True
-		if False and command_name == "drag_select" and args["event"]["button"] == 1 and "additive" in args.keys() and args["additive"]:
+		if command_name == "drag_select" and args["event"]["button"] == 1 and "additive" in args.keys() and args["additive"]:
 			selection = view.sel()[0]
 			if selection.a <= 0:
 				return
@@ -269,14 +316,14 @@ class LuaDevCollector(KSigns, sublime_plugin.EventListener):
 				class_name_region = view.word(word_region.a - 2)
 				class_name = view.substr(class_name_region)
 
-			methods = self.get_methods_by_key(word, class_name)
-			if len(methods) == 1:
-				method = methods[0]
-				view.window().open_file(method.full_path() + ":" + str(method.line_index()), sublime.ENCODED_POSITION)
+			signs = self.get_signs_by_key(word, class_name)
+			if len(signs) == 1:
+				sign = signs[0]
+				view.window().open_file(sign.full_path + ":" + str(sign.line_index), sublime.ENCODED_POSITION)
 			else:
 				menus = []
-				for method in methods:
-					menus.append(method.class_name() + "." + method.name() + "\t" + method.filename())
+				for sign in signs:
+					menus.append(sign.classname + "." + sign.name + "\t" + sign.filename)
 				view.show_popup_menu(menus, None)
 		elif command_name == "left_delete" or command_name == "right_delete":
 			self._modified_delete_flag = True
